@@ -102,8 +102,8 @@ def _is_nested_op(txt):
     return txt != "||" and txt != "&&" and ("||" in txt or "&&" in txt)
 
 
-# handle_logic_op('false || echo "hhaha" && ls -la && echo How i this shit')
+handle_logic_op('false || echo "hhaha" && ls -la && echo How i this shit')
 # print(_parse_command_operator("fasle || echo 'hhaha'"))
 # print(handle_logic_op('ls &&ls&&ls&&ls||echo "dawdaw"'))
-handle_logic_op('ls ||ls&&ls||ls&&echo "dawdaw"')
+# handle_logic_op('ls ||ls&&ls||ls&&echo "dawdaw"')
 # handle_logic_op('ls ||ls&&ls||ls&&echo "dawdaw"||   echo "dawdawdawdaw" && echo "shekcon"')

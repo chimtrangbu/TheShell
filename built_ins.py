@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import sys
 import os
 import subprocess
 
@@ -101,13 +100,17 @@ def builtins_unset(variables=''):  # implement unset
 
 
 def builtins_run(command, whatever):
-    if './' in command:
+    exit_value = 0
+    errors = []
+    if '/' in command:
         try:
             subprocess.run(command)
         except PermissionError:
-            print('intek-sh: %s: Permission denied' % command)
+            exit_value = 1
+            errors.append('intek-sh: %s: Permission denied' % command)
         except FileNotFoundError:
-            print('intek-sh: %s: command not found' % command)
+            exit_value = 127
+            errors.append('intek-sh: %s: command not found' % command)
     elif 'PATH' in os.environ:
         paths = os.environ['PATH'].split(':')
         not_found = True
@@ -115,14 +118,21 @@ def builtins_run(command, whatever):
             realpath = path + '/' + command
             if os.path.exists(realpath):
                 not_found = False
-                subprocess.run([realpath]+whatever)
+                for arg in whatever:
+                    process = subprocess.Popen([realpath]+arg, stdout=subprocess.PIPE)
+
+                # process = subprocess.Popen([realpath]+whatever, stdout=subprocess.PIPE)
+                # process.wait()
                 break
         if not_found:
-            print('intek-sh: %s: command not found' % command)
+            exit_value = 127
+            errors.append('intek-sh: %s: command not found' % command)
     else:
-        print('intek-sh: %s: command not found' % command)
-
-    # return exitcode, output
+        exit_value = 127
+        errors.append('intek-sh: %s: command not found' % command)
+    if not exit_value:
+        output = '\n'.join(errors)
+    return exit_value, output
 
 
 def main():
@@ -140,6 +150,10 @@ def main():
                 builtins_run(command, whatever)
         except EOFError:
             loop = False
+
+
+# os.environ[?] = exit_value
+# option return stdout
 
 
 if __name__ == '__main__':

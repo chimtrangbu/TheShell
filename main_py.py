@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import curses
+from completion import handle_completion
 
 def insert (source_str, insert_str, pos):
     return source_str[:pos]+insert_str+source_str[pos:]
@@ -35,10 +36,14 @@ class Shell:
 
     def printf(self, string="", end='\n'):
         pos = self.get_curs_pos()
-        self.window.addstr(pos[0], pos[1], string+end)
+        self.add_str(pos[0], pos[1], string+end)
+
+
 
     def add_str(self, y, x, string):
         self.window.addstr(y, x, string)
+        self.window.refresh()
+
 
 
     def get_curs_pos(self):
@@ -100,7 +105,8 @@ class Shell:
                 Shell.STACK_CURRENT_INDEX -= 1
 
             if abs(Shell.STACK_CURRENT_INDEX) != len(Shell.HISTORY_STACK): # Not meet the start
-                self.delete_nlines(self.line_count(Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX]))
+                #self.delete_nlines(self.line_count(Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX]))
+                self.window.deleteln()
                 self.window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX-1]) #print the previous
                 input = Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX-1]
                 Shell.STACK_CURRENT_INDEX -= 1
@@ -167,13 +173,39 @@ class Shell:
                     self.move_curs(0, 1)
                 char = ''
 
-            elif ord(char) == 263: # handle BACKSPACE
+            elif char == chr(curses.KEY_BACKSPACE): # curses.BACKSPACE
                 pos = self.get_curs_pos()
                 del_loc = pos[0]*self.width + pos[1] - (input_pos[0]*self.width + input_pos[1])
-                input = input[:del_loc-1] + input[del_loc:]
+                if del_loc > 0:
+                    input = input[:del_loc-1] + input[del_loc:]
                 self.delete_nlines(self.line_count(input), input_pos[0], revese=False)
                 self.window.addstr(input_pos[0], 0, Shell.PROMPT + input)
-                self.set_curs_pos(pos[0], pos[1]-1)
+                if pos[1] > 10 or pos[0] != input_pos[0]:
+                    self.set_curs_pos(pos[0], pos[1]-1)
+                elif pos[1] == 10:
+                    self.set_curs_pos(pos[0], pos[1])
+                char = ''
+
+            elif ord(char) == 9: # curses.BTAB
+                input = handle_completion(input,'file')
+                self.window.addstr(input_pos[0], 10, input)
+                char = ''
+
+            elif char == chr(curses.KEY_DC):
+                pos = self.get_curs_pos()
+                del_loc = pos[0]*self.width + pos[1] - (input_pos[0]*self.width + input_pos[1]) + 1
+                if del_loc > 0:
+                    input = input[:del_loc-1] + input[del_loc:]
+                self.delete_nlines(self.line_count(input), input_pos[0], revese=False)
+                self.window.addstr(input_pos[0], 0, Shell.PROMPT + input)
+                self.set_curs_pos(pos[0], pos[1])
+                char = ''
+
+            elif ord(char) == 410:  # event resize
+                (self.height, self.width) =  self.window.getmaxyx()
+                #pos = self.get_curs_pos()
+                #self.set_curs_pos(pos[0], pos[1])
+                self.window.refresh()
                 char = ''
 
 
@@ -183,7 +215,7 @@ class Shell:
             if char != '':
                 insert_loc = curs_pos[0]*self.width + curs_pos[1] - (input_pos[0]*self.width + input_pos[1])
                 input = input[:insert_loc] + char + input[insert_loc:]
-                self.window.addstr(input_pos[0], 10, input) # wrong
+                self.window.addstr(input_pos[0], 10, input)
                 self.set_curs_pos(curs_pos[0], curs_pos[1]+1)
 
             # loop again
@@ -210,7 +242,6 @@ def main():
             if choice == 'exit':
                 break
             else:
-
                 """
                 #curses.noecho()
                 output = subprocess.check_output(choice.split()).decode()

@@ -35,7 +35,8 @@ def parameter_expansions(string):
     string = path.expandvars(string)
     while '$' in string:
         j = string.index('$') + 1
-        while j < len(string) and string[j] and (string[j].isalnum() or string[j] == '_'):
+        while j < len(string) and string[j] and \
+                (string[j].isalnum() or string[j] == '_'):
             j += 1
         string = string[:string.index('$')] + string[j:]
     return string
@@ -47,6 +48,3 @@ def path_expansions(string):
     if '$' in string:
         string = parameter_expansions(string)
     return string
-
-
-print(path_expansions('echo k$wrongname'))
