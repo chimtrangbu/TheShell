@@ -24,4 +24,4 @@ def get_ll_dir(directory):
     return ['.', '..'] + listdir('.')
 
 
-print(globbing('../.*'))
+print(globbing('../.*/'))
