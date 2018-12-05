@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from os import path, getenv
+from built_ins import check_name
 
 
 def expand_tilde(arg):
@@ -22,7 +23,7 @@ def tilde_expansions(string):
         if '~' in arg:
             if '=' in arg:
                 key, new_args = arg.split('=', 1)
-                if key:
+                if check_name(key):
                     args[i] = key + '=' + ':'.join([expand_tilde(x) for
                                                     x in new_args.split(':')])
             else:
@@ -32,19 +33,31 @@ def tilde_expansions(string):
 
 def parameter_expansions(string):
     # parameter expansions
+    exit_value = 0
     string = path.expandvars(string)
     while '$' in string:
+        if '${' in string:
+            name = string[string.find('${')-1:string.find('}')+1]
+            if check_name(name[3:-1]):
+                string = string[:string.find('${')-1] + \
+                         string[string.find('}')+1:]
+                continue
+            else:
+                exit_value = 1
+                string = 'bash: %s: bad substitution' % name
+                return exit_value, string
         j = string.index('$') + 1
         while j < len(string) and string[j] and \
                 (string[j].isalnum() or string[j] == '_'):
             j += 1
         string = string[:string.index('$')] + string[j:]
-    return string
+    return exit_value, string
 
 
 def path_expansions(string):
+    exit_value = 0
     if '~' in string:
         string = tilde_expansions(string)
     if '$' in string:
-        string = parameter_expansions(string)
-    return string
+        exit_value, string = parameter_expansions(string)
+    return exit_value, string

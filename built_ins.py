@@ -62,7 +62,8 @@ def builtins_export(variables=''):  # implement export
                 os.environ[name] = value
             else:
                 exit_value = 1
-                errors.append('intek-sh: export: `%s\': not a valid identifier' % variable)
+                errors.append('intek-sh: export: `%s\': '
+                              'not a valid identifier' % variable)
         output = '\n'.join(errors)
     else:
         env = builtins_printenv()[1].split('\n')
@@ -85,26 +86,26 @@ def builtins_unset(variables=''):  # implement unset
     return exit_value, '\n'.join(errors)
 
 
-# def builtins_exit(exit_code):  # implement exit
-#     global w_loop
-#     w_loop = False
-#     print('exit')
-#     if exit_code:
-#         try:
-#             sys.exit(int(exit_code))
-#         except ValueError:
-#             print('intek-sh: exit: ', end='')
-#             sys.exit(exit_code)
-#     else:
-#         sys.exit()
+def builtins_exit(exit_code):  # implement exit
+    global w_loop
+    w_loop = False
+    print('exit')
+    if exit_code:
+        try:
+            exit(int(exit_code))
+        except ValueError:
+            print('intek-sh: exit: ', end='')
+            exit(exit_code)
+    else:
+        exit()
 
 
-def builtins_run(command, whatever):
+def builtins_run_command(command, whatever, input=None):
     exit_value = 0
     errors = []
     if '/' in command:
         try:
-            subprocess.run(command)
+            output = subprocess.check_output(command+whatever, stdin=input)
         except PermissionError:
             exit_value = 1
             errors.append('intek-sh: %s: Permission denied' % command)
@@ -118,11 +119,8 @@ def builtins_run(command, whatever):
             realpath = path + '/' + command
             if os.path.exists(realpath):
                 not_found = False
-                for arg in whatever:
-                    process = subprocess.Popen([realpath]+arg, stdout=subprocess.PIPE)
-
-                # process = subprocess.Popen([realpath]+whatever, stdout=subprocess.PIPE)
-                # process.wait()
+                process = subprocess.Popen([realpath]+whatever, stdout=subprocess.PIPE)
+                process.wait()
                 break
         if not_found:
             exit_value = 127
@@ -147,7 +145,7 @@ def main():
             if command in builtins:
                 exec('builtins_%s(\' \'.join(whatever))' % command)
             else:
-                builtins_run(command, whatever)
+                builtins_run_command(command, whatever)
         except EOFError:
             loop = False
 
