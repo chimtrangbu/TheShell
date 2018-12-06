@@ -14,22 +14,7 @@ def get_all_commands():
 
 def get_all_files(path):
     '''
-    Task: + Get all file or
-    where_am_i
-    count_double_agents
-    find_password
-    find_traitor
-    find_info
-    what_is_your_20
-    intruders
-    correction
-    FFFFFFF
-
-    Failures:
-
-      1) should work with only different ip before 05
-
-           expected: "1 34.92.5.177\n1 64.94.3.200\n1 70.15.6.236\n1 99.84.4.194\n1 129.159.8.168\n1 148.30.2.34\n1 181.20.1.154\n1 186.65.9.187\n1 213.240.7.248\n1 236directory at head of path passed
+    Task: + Get all file or directory at head of path passed
     '''
     head, _ = os.path.split(path)
     if head:
@@ -45,10 +30,10 @@ def get_suggest(txt, mode):
     '''
     if mode is 'command':
         valids = get_all_commands()
+        suggests = [i for i in valids if i.lower().startswith(txt)]
     else:
         valids = get_all_files(txt)
-    
-    suggests = [i for i in valids if i.lower().startswith(txt)]
+        suggests = [i for i in valids]
     return suggests
 
 
@@ -91,4 +76,4 @@ def handle_completion(text, mode):
 
 
 if __name__ == '__main__':
-    print(handle_completion('pyt', mode='command'))
+    print(get_suggest('cat', mode='file'))

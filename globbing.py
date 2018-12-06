@@ -32,3 +32,4 @@ def glob_string(string):
     return ' '.join(tokens)
 
 # print(globbing('../.*/'))
+# print(glob_string('echo *'))
