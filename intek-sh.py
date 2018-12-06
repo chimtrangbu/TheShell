@@ -1,340 +1,256 @@
 #!/usr/bin/env python3
-import curses
-import subprocess
-from completion import handle_completion, get_suggest
-from built_ins import handle_logic_op
+from command_line import Shell
 import os
 import sys
+import curses
+from subprocess import Popen, PIPE
+from globbing import glob_string
+from path_expansions import path_expansions
+from parse_command_shell import Token
 
 
-global window
-window = curses.initscr()
+def handle_logic_op(string):
+    '''
+    Tasks: + First get step need to do from parse command operator
+           + Run command and if exit status isn't 0 and operator is 'and' then skip
+           + else exit status is 0 and operator is 'or' then skip
+    '''
+    steps_exec = parse_command_operator(Token(string).split_token())
+    operator = ''
+    result = []
+    for i, step in enumerate(steps_exec):
+        command = step[0]
+        op = step[1]
+        if is_skip_command(i, operator) and is_boolean_command(command[0]):
+            # run command with arguments
+            result.append(handle_exit_status(' '.join(step[0])))
+        operator = op
+    return result
 
 
-def insert (source_str, insert_str, pos):
-    return source_str[:pos]+insert_str+source_str[pos:]
-
-def write_file(filename, content, mode='w'):
-    with open(filename, mode) as f:
-        f.write(content)
-        return
-
-class Shell:
-    HISTORY_STACK = []
-    STACK_CURRENT_INDEX = 0
-    PROMPT = "intek-sh$ "
-
-
-    def __init__(self):
-        #window = curses.initscr()
-        self.name = curses.termname()
-        curses.noecho()
-        window.keypad(True)
-        window.scrollok(True)
-        self.last_cursor_pos = (0, 0)
-        self.write_win_file = True
-        self.windowlog = 'windowlog'
-        (self.height, self.width) =  window.getmaxyx()
-        self.preivous_key = ""
-
-    def print_history(self, index = False):
-        if not index:
-            for i in range(len(Shell.HISTORY_STACK)):
-                self.printf("{:3d}".format(i)+'  '+str(Shell.HISTORY_STACK[i]))
+def handle_com_substitution(shell, arguments):
+    new_command = []
+    for arg in arguments:
+        if arg.startswith('`') and arg.endswith('`'):
+            arg = Token(arg[1:-1:]).split_token()
+            result = handle_logic_op(arg)
+            if result:
+                new_command += result
         else:
-            Shell.HISTORY_STACK.pop()
-            Shell.STACK_CURRENT_INDEX = 0
-            self.printf(Shell.HISTORY_STACK[index])
+            new_command.append(arg)
+    return new_command
 
 
-    def read_win_log(self):
-        with open(self.windowlog, 'r') as f:
-            data = f.read()
-        if data.endswith('intek-sh$ ') or data.endswith('intek-sh$'):
-            return data + ' '
-        else:
-            return data
-
-    def write_win_log(self, file):
-        pos = self.get_curs_pos()
-        with open(self.windowlog,'w') as f:
-            s = ''
-            for i in range(pos[0]+2):
-                data = window.instr(i,0).decode().strip(' ')
-                if len(data) < self.width:
-                    s += data + '\n'
-                else:
-                    s += data
-            f.write(s.strip('\n'))
-        window.move(pos[0], pos[1])
-
-    def	get_str(self, prompt=""):
-        self.printf(prompt, end='')
-        return window.getstr()
-
-    def get_ch(self, prompt=""):
-        pos = self.get_curs_pos()
-        self.add_str(pos[0], 0, prompt)
-        return chr(window.getch())
-
-    def printf(self, string="", end='\n'):
-        pos = self.get_curs_pos()
-        if string.endswith('\n'):
-            self.add_str(pos[0], pos[1], string)
-        else:
-            self.add_str(pos[0], pos[1], string+end)
-        write_file(self.windowlog, string+'\n','a')
-
-    def add_str(self, y, x, string):
-        window.addstr(y, x, string)
-        window.refresh()
-
-    def get_curs_pos(self):
-        #window.refresh()
-        pos = curses.getsyx()
-        return (pos[0], pos[1])
-
-    def set_curs_pos(self, y=None, x=None):
-        window.refresh()
-        pos = self.get_curs_pos()
-        if y is None:
-            y = pos[0]
-        if x is None:
-            x = pos[1]
-        curses.setsyx(y,x)
-        curses.doupdate()
-
-    def move_curs(self, dy, dx):
-        pos = self.get_curs_pos()
-        self.set_curs_pos(pos[0]+dy, pos[1]+dx)
-        curses.doupdate()
-
-    def line_count(self, string):
-        """ return number of line the string can takk place based on window width """
-        return int((len(string) + 10) / self.width) + 1
-
-    def delete_nlines(self, n=1, startl=None, revese=True):
-        """
-        Delete n lines in curses
-        - if "startl" not given: base on current curs position
-        - "reverse" to delete upward (bottom to top) and so on
-        """
-        pos = curses.getsyx()
-        if startl is None:
-            window.move(pos[0], self.width-1)
-        else:
-            window.move(startl, self.width-1)
-
-        for i in range(n):
-            window.deleteln()
-            if i != n-1:
-                pos = curses.getsyx()
-                if revese:
-                    window.move(pos[0]-1, self.width-1)
-                else:
-                    window.move(pos[0]+1, self.width-1)
+def is_skip_command(index, operator):
+    if operator == '&&':
+        return index == 0 or os.environ['?'] == '0'
+    return index == 0 or os.environ['?'] != '0'
 
 
+def is_boolean_command(command):
+    if command == 'false':
+        os.environ['?'] = '1'
+    elif command == 'true':
+        os.environ['?'] = '0'
+    else:
+        return True
+    return False
 
 
-    def _process_KEY_UP(self, input, curs_pos):
+def parse_command_operator(string):
+    '''
+    Tasks: + Split command and logical operator into list of tuple
+           + Inside tuple is command + args and logical operators after that command
+           + Return list of step need to do logical operators
+    '''
+    steps = []
+    commands = string + [" "]
+    start = 0
+    for i, com in enumerate(commands):
+        if com == '||' or com == "&&" or com == ' ':
+            steps.append((commands[start: i], commands[i]))
+            start = i + 1
+    return steps
+
+
+def builtins_cd(directory=''):  # implement cd
+    if directory:
         try:
-            if len(Shell.HISTORY_STACK) == 0:
-                return input
-            if input not in [Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX],'\n','']:
-                Shell.HISTORY_STACK.append(input)
-                Shell.STACK_CURRENT_INDEX -= 1
-            if abs(Shell.STACK_CURRENT_INDEX) != len(Shell.HISTORY_STACK): # Not meet the start
-                self.delete_nlines(self.line_count(Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX]), startl=curs_pos[0], revese=False)
-                #window.deleteln()
-                window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX-1]) #print the previous
-                input = Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX-1]
-                Shell.STACK_CURRENT_INDEX -= 1
-            else:
-                if input is not Shell.HISTORY_STACK[0]: # EndOfStack
-                    self.delete_nlines(self.line_count(Shell.HISTORY_STACK[0]))
-                    window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[0])
-                    input = Shell.HISTORY_STACK[0]
-            return input
-        except IndexError:
-            pass
+            os.environ['OLDPWD'] = os.getcwd()
+            os.chdir(directory)  # change working directory
+            os.environ['PWD'] = os.getcwd()
+            exit_value, output = 0, ''
+        except FileNotFoundError:
+            exit_value, output = 1, 'intek-sh: cd: %s: No ' \
+                                       'such file or directory\n' % directory
+    else:  # if variable directory is empty, change working dir into homepath
+        if 'HOME' not in os.environ:
+            exit_value, output = 1, 'intek-sh: cd: HOME not set'
+        else:
+            os.environ['OLDPWD'] = os.getcwd()
+            homepath = os.environ['HOME']
+            os.chdir(homepath)
+            os.environ['PWD'] = os.getcwd()
+            exit_value, output = 0, ''
+    return exit_value, output
 
-    def _process_KEY_DOWN(self, input, curs_pos):
+
+def builtins_printenv(variables=''):  # implement printenv
+    exit_value = 0
+    output_lines = []
+    if variables:
+        for variable in variables.split():
+            if variable in os.environ:
+                output_lines.append(os.environ[variable])
+            else:
+                exit_value = 1
+    else:  # if variable is empty, print all envs
+        for key, value in os.environ.items():
+            output_lines.append(key + '=' + value)
+    return exit_value, '\n'.join(output_lines)
+
+
+def check_name(name):
+    # check if name is a valid identifier or not
+    if not name or name[0].isdigit():
+        return False
+    for char in name:
+        if not (char.isalnum() or char is '_'):
+            return False
+    return True
+
+
+def builtins_export(variables=''):  # implement export
+    exit_value = 0
+    if variables:
+        errors = []
+        for variable in variables.split():
+            if '=' in variable:
+                name, value = variable.split('=', 1)
+            else:  # if variable stands alone, set its value as ''
+                name = variable
+                value = ''
+            if check_name(name):
+                os.environ[name] = value
+            else:
+                exit_value = 1
+                errors.append('intek-sh: export: `%s\': '
+                              'not a valid identifier\n' % variable)
+        output = '\n'.join(errors)
+    else:
+        env = builtins_printenv()[1].split('\n')
+        result = []
+        for line in env:
+            result.append('declare -x ' + line.replace('=', '=\"', 1) + '\"')
+        output = '\n'.join(result)
+    return exit_value, output
+
+
+def builtins_unset(variables=''):  # implement unset
+    exit_value = 0
+    errors = []
+    for variable in variables.split():
+        if not check_name(variable):
+            exit_value = 1
+            errors.append('intek-sh: unset: `%s\': not a valid identifier\n' % variable)
+        elif variable in os.environ:
+            os.environ.pop(variable)
+    return exit_value, '\n'.join(errors)
+
+
+def builtins_exit(exit_code):  # implement exit
+    global loop
+    exit_value = 0
+    output = []
+    output.append('exit')
+    if exit_code:
+        if exit_code.isdigit():
+            exit_value = int(exit_code)
+        else:
+            output.append('intek-sh: exit: ' + exit_code)
+    loop = False
+    return exit_value, '\n'.join(output)
+
+
+def run_command(command, whatever=[], inp=None):
+    global process
+    exit_value = 0
+    output = []
+    builtins = ('cd', 'printenv', 'export', 'unset', 'exit')
+    if command in builtins:
+        if command == 'cd':
+            return builtins_cd(' '.join(whatever))
+        elif command == 'printenv':
+            return builtins_printenv(' '.join(whatever))
+        elif command == 'export':
+            return builtins_export(' '.join(whatever))
+        elif command == 'unset':
+            return builtins_unset(' '.join(whatever))
+        else:
+            return builtins_exit(' '.join(whatever))
+    if '/' in command:
         try:
-            if len(Shell.HISTORY_STACK) == 0:
-                return input
-            if input not in [Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX],'\n','']:
-                Shell.HISTORY_STACK.append(input)
-                Shell.STACK_CURRENT_INDEX += 1
-            if Shell.STACK_CURRENT_INDEX != -1: # Not meet the end of stack
-                self.delete_nlines(self.line_count(Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX]))
-                window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX+1]) #print the previous
-                input = Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX+1]
-                Shell.STACK_CURRENT_INDEX += 1
-            else:
-                if input is not Shell.HISTORY_STACK[-1]: # EndOfStack
-                    self.delete_nlines(self.line_count(Shell.HISTORY_STACK[-1]))
-                    window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[-1])
-                    input = Shell.HISTORY_STACK[-1]
-            return input
-        except IndexError:
-            pass
-    ##################################################################################
-    def process_input(self):
-        char = self.get_ch(Shell.PROMPT)
-        input = "" # inittial input
-
-        input_pos = self.get_curs_pos()
-        while char not in ['\n']:
-            ######################### KEY process ####################################
-            """
-                This block's purposes are handling special KEYS
-                Add feature on this block
-            """
-            ############# Handle window resize  ################################
-            if ord(char) == 410:
-                lens = len(input)
-                window.clear()
-                window.refresh()
-                data = self.read_win_log()
-                window.addstr(0,0,data)
-                window.refresh()
-                (self.height, self.width) =  window.getmaxyx()
-                pos = self.get_curs_pos()
-                step = pos[0]*self.width + pos[1]
-                loc_step = step - lens
-                input_pos = loc_step//self.width, loc_step%self.width
-                #window.move(input_pos[0] + lens//self.width, (step + lens) % self.width)
-                char = ''
-
-            ##################################################################
-            elif char == chr(curses.KEY_UP):
-                self.preivous_key = ''
-                input = self._process_KEY_UP(input, input_pos)
-                self.set_curs_pos(x=len(Shell.PROMPT+input))
-                char = ''
-
-            elif char == chr(curses.KEY_DOWN):
-                self.preivous_key = ''
-                input = self._process_KEY_DOWN(input, input_pos)
-                self.set_curs_pos(x=len(Shell.PROMPT+input))
-                char = ''
-
-            elif char == chr(curses.KEY_LEFT):
-                self.preivous_key = ''
-                pos = self.get_curs_pos()
-                if pos[1] > 10 or pos[0] != input_pos[0]:
-                    if pos[1] - 1 < 0:
-                        pos = (pos[0] - 1, self.width)
-                    self.set_curs_pos(pos[0], pos[1]-1)
-                elif pos[1] == 10:
-                    self.set_curs_pos(pos[0], pos[1])
-                char = ''
-
-            elif char == chr(curses.KEY_RIGHT):
-                self.preivous_key = ''
-                pos = self.get_curs_pos()
-                step = pos[0]*self.width + pos[1] + 1
-                if step <= input_pos[0]*self.width + input_pos[1] + len(input):
-                    self.set_curs_pos(step // self.width, step % self.width)
-                char = ''
-
-            elif char == chr(263): # curses.BACKSPACE
-                self.preivous_key = ''
-                pos = self.get_curs_pos()
-                del_loc = pos[0]*self.width + pos[1] - (input_pos[0]*self.width + input_pos[1])
-                if del_loc > 0:
-                    input = input[:del_loc-1] + input[del_loc:]
-                self.delete_nlines(self.line_count(input), input_pos[0], revese=False)
-                window.addstr(input_pos[0], 0, Shell.PROMPT + input)
-                if pos[1] > 10 or pos[0] != input_pos[0]:
-                    self.set_curs_pos(pos[0], pos[1]-1)
-                elif pos[1] == 10:
-                    self.set_curs_pos(pos[0], pos[1])
-                char = ''
-
-            elif ord(char) == 9: # curses.TAB
-                if self.preivous_key == 'TAB': # second TAB
-                    if input.endswith(' '):
-                        data = "\n".join(get_suggest(input, 'file'))
-                    else:
-                        data = "\n".join(get_suggest(input, 'command'))
-                    if len(data):
-                        self.printf('\n'+data)
-                    self.preivous_key = 'TAB2'
-                    break
-
-                else:
-                    if input.endswith(' '):
-                        data = "\n".join(get_suggest(input, 'file'))
-                        if len(data):
-                            self.printf('\n'+data)
-                            self.preivous_key = 'TAB2'
-                            break
-                    if input != handle_completion(input, 'command'):
-                        input = handle_completion(input, 'command')
-                        self.preivous_key = 'TAB'
-                window.addstr(input_pos[0], 10, input)
-                window.refresh()
-                char = ''
-            elif char == chr(curses.KEY_DC):
-                self.preivous_key = ''
-                pos = self.get_curs_pos()
-                del_loc = pos[0]*self.width + pos[1] - (input_pos[0]*self.width + input_pos[1]) + 1
-                if del_loc > 0:
-                    input = input[:del_loc-1] + input[del_loc:]
-                self.delete_nlines(self.line_count(input), input_pos[0], revese=False)
-                window.addstr(input_pos[0], 0, Shell.PROMPT + input)
-                self.set_curs_pos(pos[0], pos[1])
-                char = ''
+            process = Popen([command]+whatever, stdin=inp, stdout=PIPE, stderr=PIPE)
+            out, err = process.communicate()  # byte
+            process.wait()
+            exit_value = process.returncode
+            if err:
+                output.append(err.decode())
+            if out:
+                output.append(out.decode())
+        except PermissionError:
+            exit_value = 126
+            output.append('intek-sh: %s: Permission denied\n' % command)
+        except FileNotFoundError:
+            exit_value = 127
+            output.append('intek-sh: %s: command not found\n' % command)
+    elif 'PATH' in os.environ:
+        paths = os.environ['PATH'].split(':')
+        not_found = True
+        for path in paths:
+            realpath = path + '/' + command
+            if os.path.exists(realpath):
+                not_found = False
+                process = Popen([realpath]+whatever, stdin=inp, stdout=PIPE, stderr=PIPE)
+                out, err = process.communicate()  # byte
+                process.wait()
+                exit_value = process.returncode
+                if err:
+                    output.append(err.decode())
+                if out:
+                    output.append(out.decode())
+                break
+        if not_found:
+            exit_value = 127
+            output.append('intek-sh: %s: command not found\n' % command)
+    else:
+        exit_value = 127
+        output.append('intek-sh: %s: command not found\n' % command)
+    return exit_value, '\n'.join(output)
 
 
+def handle_exit_status(string):
+    if '$' in string or '~' in string:
+        exit_value, string = path_expansions(string)
+        if exit_value:
+            os.environ['?'] = str(exit_value)
+            return string
+    if '*' in string or '?' in string:
+        string = glob_string(string)
+    command = string.split()[0]
+    args = string[len(command):].split()
+    exit_value, output = run_command(command, args)
+    os.environ['?'] = str(exit_value)
+    return output
 
-
-
-
-
-            ##############################################################################################
-            # Insert mode
-            curs_pos = self.get_curs_pos()
-            if char != '':
-                self.preivous_key = char
-                insert_loc = curs_pos[0]*self.width + curs_pos[1] - (input_pos[0]*self.width + input_pos[1])
-                input = input[:insert_loc] + char + input[insert_loc:]
-                window.addstr(input_pos[0], 10, input)
-                self.set_curs_pos(curs_pos[0], curs_pos[1]+1)
-
-            # Write on window
-            self.write_win_log('windowlog')
-            # loop again
-            char = chr(window.getch())
-
-
-        if self.preivous_key != 'TAB2':
-            step = input_pos[0]*self.width + input_pos[1] + len(input)
-            window.move(step // self.width, step % self.width)
-
-        if input not in ['\n','']:
-            Shell.HISTORY_STACK.append(input)
-            Shell.STACK_CURRENT_INDEX = 0
-
-        # Write the PROMPT tp file when press Enter with APPEND mode
-        write_file(self.windowlog, '\n'+Shell.PROMPT, mode = 'a')
-        # Refresh the window and enter newline
-        if self.preivous_key != 'TAB2':
-            window.addstr("\n")
-
-        self.preivous_key = ''
-        window.refresh()
-        return input
-
-global shell
-shell = Shell()
 
 def printf(string, end='\n'):
+    global shell
     shell.printf(string, end)
 
 def main():
+    global shell
+    shell = Shell()
     os.environ['?'] = '0'
     while True:
         try:
