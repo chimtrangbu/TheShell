@@ -1,9 +1,6 @@
 import curses
 from completion import handle_completion, get_suggest
 
-global window
-window = curses.initscr()
-
 
 def insert (source_str, insert_str, pos):
     return source_str[:pos]+insert_str+source_str[pos:]
@@ -20,7 +17,8 @@ class Shell:
 
 
     def __init__(self):
-        #window = curses.initscr()
+        global window
+        window = curses.initscr()
         self.name = curses.termname()
         curses.noecho()
         window.keypad(True)
