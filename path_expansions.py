@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 
 from os import path, getenv
-from built_ins import check_name
+import os
+# from built_ins import check_name
+
+
+def check_name(name):
+    # check if name is a valid identifier or not
+    if not name or name[0].isdigit():
+        return False
+    for char in name:
+        if not (char.isalnum() or char is '_'):
+            return False
+    return True
 
 
 def expand_tilde(arg):
@@ -35,6 +46,8 @@ def parameter_expansions(string):
     # parameter expansions
     exit_value = 0
     string = path.expandvars(string)
+    if '$?' in string:
+        string = string.replace('$?', str(os.environ['?']))
     while '$' in string:
         if '${' in string:
             name = string[string.find('${')-1:string.find('}')+1]
@@ -61,3 +74,7 @@ def path_expansions(string):
     if '$' in string:
         exit_value, string = parameter_expansions(string)
     return exit_value, string
+
+
+# os.environ['?']='0'
+# print(path_expansions('$?'))

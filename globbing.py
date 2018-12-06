@@ -24,4 +24,11 @@ def get_ll_dir(directory):
     return ['.', '..'] + listdir('.')
 
 
+def glob_string(string):
+    tokens = string.split()
+    for i, token in enumerate(tokens):
+        if '*' in token or '?' in token:
+            tokens[i] = ' '.join(globbing(token))
+    return ' '.join(tokens)
+
 # print(globbing('../.*/'))

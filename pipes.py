@@ -20,6 +20,6 @@ import re
 
 
 regex = r'(?<!\|)\|(?!\|)'
-pipes = re.split(regex, 'cho bxk||g|hl>gyej$')
+pipes = re.split(regex, 'cho bxk||ghl>gyej$')
 # print(pipes('echo a | grep z> 5>>as>d| s a'))
 print(pipes)

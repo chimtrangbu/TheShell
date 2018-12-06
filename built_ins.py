@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 import os
-import subprocess
+import re
+from subprocess import Popen, PIPE
+from globbing import glob_string
+from path_expansions import path_expansions
 
 
 def builtins_cd(directory=''):  # implement cd
     if directory:
         try:
+            os.environ['OLDPWD'] = os.getcwd()
             os.chdir(directory)  # change working directory
             os.environ['PWD'] = os.getcwd()
             exit_value, output = 0, ''
@@ -16,6 +20,7 @@ def builtins_cd(directory=''):  # implement cd
         if 'HOME' not in os.environ:
             exit_value, output = 1, 'intek-sh: cd: HOME not set'
         else:
+            os.environ['OLDPWD'] = os.getcwd()
             homepath = os.environ['HOME']
             os.chdir(homepath)
             os.environ['PWD'] = os.getcwd()
@@ -88,30 +93,49 @@ def builtins_unset(variables=''):  # implement unset
 
 def builtins_exit(exit_code):  # implement exit
     global w_loop
-    w_loop = False
-    print('exit')
-    if exit_code:
-        try:
-            exit(int(exit_code))
-        except ValueError:
-            print('intek-sh: exit: ', end='')
-            exit(exit_code)
-    else:
-        exit()
-
-
-def builtins_run_command(command, whatever, input=None):
     exit_value = 0
-    errors = []
+    output = []
+    output.append('exit')
+    if exit_code:
+        if exit_code.isdigit():
+            exit_value = int(exit_code)
+        else:
+            output.append('intek-sh: exit: ' + exit_code)
+    w_loop = False
+    return exit_value, '\n'.join(output)
+
+
+def run_single_command(command, whatever='', inp=None):
+    exit_value = 0
+    output = []
+    builtins = ('cd', 'printenv', 'export', 'unset', 'exit')
+    if command in builtins:
+        whatever = whatever.strip()
+        if command == 'cd':
+            return builtins_cd(whatever)
+        elif command == 'printenv':
+            return builtins_printenv(whatever)
+        elif command == 'export':
+            return builtins_export(whatever)
+        elif command == 'unset':
+            return builtins_unset(whatever)
+        else:
+            return builtins_exit(whatever)
     if '/' in command:
         try:
-            output = subprocess.check_output(command+whatever, stdin=input)
+            process = Popen(command+whatever, stdin=inp, stdout=PIPE, stderr=PIPE, shell=True)
+            out, err = process.communicate()  # byte
+            if err:
+                exit_value = 1
+                output.append(err.decode())
+            if out:
+                output.append(out.decode())
         except PermissionError:
-            exit_value = 1
-            errors.append('intek-sh: %s: Permission denied' % command)
+            exit_value = 126
+            output.append('intek-sh: %s: Permission denied' % command)
         except FileNotFoundError:
             exit_value = 127
-            errors.append('intek-sh: %s: command not found' % command)
+            output.append('intek-sh: %s: command not found' % command)
     elif 'PATH' in os.environ:
         paths = os.environ['PATH'].split(':')
         not_found = True
@@ -119,18 +143,58 @@ def builtins_run_command(command, whatever, input=None):
             realpath = path + '/' + command
             if os.path.exists(realpath):
                 not_found = False
-                process = subprocess.Popen([realpath]+whatever, stdout=subprocess.PIPE)
-                process.wait()
+                process = Popen(realpath+whatever, stdin=inp, stdout=PIPE, stderr=PIPE, shell=True)
+                out, err = process.communicate()  # byte
+                if err:
+                    exit_value = 1
+                    output.append(err.decode())
+                if out:
+                    output.append(out.decode())
                 break
         if not_found:
             exit_value = 127
-            errors.append('intek-sh: %s: command not found' % command)
+            output.append('intek-sh: %s: command not found' % command)
     else:
         exit_value = 127
-        errors.append('intek-sh: %s: command not found' % command)
-    if not exit_value:
-        output = '\n'.join(errors)
-    return exit_value, output
+        output.append('intek-sh: %s: command not found' % command)
+    return exit_value, '\n'.join(output)
+
+
+def run_pipes(string):
+    regex = r'(?<!\|)\|(?!\|)'
+    pipes = re.split(regex, string)
+    exit_value = 0
+    input = None
+    for pipe in pipes:
+        if '$' in pipe or '~' in pipe:
+            exit_value, pipe = path_expansions(pipe)
+            if exit_value:
+                os.environ['?'] = str(exit_value)
+                return exit_value, pipe
+        command = pipe.split()[0]
+        args = pipe[len(command):]
+        if '*' in args or '?' in args:
+            args = glob_string(args)
+        if not exit_value:
+            exit_value, input = run_single_command(command, args, input)
+        else:
+            return exit_value, input
+    return exit_value, input
+
+
+def run_shell(string):
+    # redirection_operators = ('>', '>>', '<')
+    os.environ['?'] = '0'
+    exit_value = 0
+    if '$' in string or '~' in string:
+        exit_value, string = path_expansions(string)
+        if exit_value:
+            os.environ['?'] = str(exit_value)
+            return string
+    exit_value, output = run_pipes(string)
+    if exit_value:
+        os.environ['?'] = str(exit_value)
+    return output
 
 
 def main():
@@ -138,20 +202,12 @@ def main():
     loop = True
     while loop:
         try:
-            whatever = input('intek-sh$ ').strip(' ').split()
+            whatever = input('intek-sh$ ')
             while not whatever:
-                whatever = input('intek-sh$ ').strip(' ').split()
-            command = whatever.pop(0)
-            if command in builtins:
-                exec('builtins_%s(\' \'.join(whatever))' % command)
-            else:
-                builtins_run_command(command, whatever)
+                whatever = input('intek-sh$ ')
+            print(run_shell(whatever))
         except EOFError:
             loop = False
-
-
-# os.environ[?] = exit_value
-# option return stdout
 
 
 if __name__ == '__main__':
