@@ -12,7 +12,7 @@ from signal import SIG_IGN, SIGINT, SIGQUIT, SIGTSTP, signal
 
 def handle_logic_op(string, isprint=False):
     '''
-    Tasks: 
+    Tasks:
     - First get step need to do from parse command operator
     - Run command and if exit status isn't 0 and operator is 'and' then skip
     - Else exit status is 0 and operator is 'or' then skip
@@ -75,8 +75,8 @@ def is_boolean_command(command):
 
 def parse_command_operator(string):
     '''
-    Tasks: 
-    - Split command and logical operator into list of tuple     
+    Tasks:
+    - Split command and logical operator into list of tuple
     - Inside tuple is command + args and logical operators after that command
     - Return list of step need to do logical operators
     '''
@@ -113,11 +113,11 @@ def builtins_cd(directory=''):  # implement cd
     return exit_value, output
 
 
-def builtins_printenv(variables=''):  # implement printenv
+def builtins_printenv(variables=[]):  # implement printenv
     exit_value = 0
     output_lines = []
     if variables:
-        for variable in variables.split():
+        for variable in variables:
             if variable in os.environ:
                 output_lines.append(os.environ[variable])
             else:
@@ -138,11 +138,11 @@ def check_name(name):
     return True
 
 
-def builtins_export(variables=''):  # implement export
+def builtins_export(variables=[]):  # implement export
     exit_value = 0
     if variables:
         errors = []
-        for variable in variables.split():
+        for variable in variables:
             if '=' in variable:
                 name, value = variable.split('=', 1)
             else:  # if variable stands alone, set its value as ''
@@ -164,10 +164,10 @@ def builtins_export(variables=''):  # implement export
     return exit_value, output
 
 
-def builtins_unset(variables=''):  # implement unset
+def builtins_unset(variables=[]):  # implement unset
     exit_value = 0
     errors = []
-    for variable in variables.split():
+    for variable in variables:
         if not check_name(variable):
             exit_value = 1
             errors.append(
@@ -189,63 +189,46 @@ def builtins_exit(exit_code):  # implement exit
     sys.exit(exit_value)
 
 
-def run_command(command, whatever=[], inp=None):
-    global process
-    exit_value = 0
+def run_executions(command, args, input):
     output = []
-    builtins = ('cd', 'printenv', 'export', 'unset', 'exit')
-    if command in builtins:
-        if command == 'cd':
-            return builtins_cd(' '.join(whatever))
-        elif command == 'printenv':
-            return builtins_printenv(' '.join(whatever))
-        elif command == 'export':
-            return builtins_export(' '.join(whatever))
-        elif command == 'unset':
-            return builtins_unset(' '.join(whatever))
-        else:
-            return builtins_exit(' '.join(whatever))
-    if '/' in command:
-        try:
-            process = Popen([command]+whatever, stdin=inp,
-                            stdout=PIPE, stderr=PIPE)
-            out, err = process.communicate()  # byte
-            process.wait()
-            exit_value = process.returncode
-            if err:
-                output.append(err.decode())
-            if out:
-                output.append(out.decode())
-        except PermissionError:
-            exit_value = 126
-            output.append('intek-sh: %s: Permission denied\n' % command)
-        except FileNotFoundError:
-            exit_value = 127
-            output.append('intek-sh: %s: command not found\n' % command)
-    elif 'PATH' in os.environ:
-        paths = os.environ['PATH'].split(':')
-        not_found = True
-        for path in paths:
-            realpath = path + '/' + command
-            if os.path.exists(realpath):
-                not_found = False
-                process = Popen([realpath]+whatever, stdin=inp,
-                                stdout=PIPE, stderr=PIPE)
-                out, err = process.communicate()  # byte
-                process.wait()
-                exit_value = process.returncode
-                if err:
-                    output.append(err.decode())
-                if out:
-                    output.append(out.decode())
-                break
-        if not_found:
-            exit_value = 127
-            output.append('intek-sh: %s: command not found\n' % command)
-    else:
+    try:
+        process = Popen([command]+args, stdin=input, stdout=PIPE, stderr=PIPE)
+        out, err = process.communicate()  # byte
+        process.wait()
+        exit_value = process.returncode
+        if err:
+            output.append(err.decode())
+        if out:
+            output.append(out.decode())
+    except PermissionError:
+        exit_value = 126
+        output.append('intek-sh: %s: Permission denied\n' % command)
+    except FileNotFoundError:
         exit_value = 127
         output.append('intek-sh: %s: command not found\n' % command)
     return exit_value, '\n'.join(output)
+
+
+def run_command(command, args=[], inp=None):
+    if command == 'cd':
+        return builtins_cd(' '.join(args))
+    elif command == 'printenv':
+        return builtins_printenv(args)
+    elif command == 'export':
+        return builtins_export(args)
+    elif command == 'unset':
+        return builtins_unset(args)
+    elif command == 'exit':
+        return builtins_exit(' '.join(args))
+    elif '/' in command:
+        return run_executions(command, args, inp)
+    elif 'PATH' in os.environ:
+        paths = os.environ['PATH'].split(':')
+        for path in paths:
+            realpath = path + '/' + command
+            if os.path.exists(realpath):
+                return run_executions(realpath, args, inp)
+    return 127, 'intek-sh: %s: command not found\n' % command
 
 
 def handle_exit_status(string):
