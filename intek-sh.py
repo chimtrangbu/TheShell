@@ -10,25 +10,25 @@ from parse_command_shell import Token
 from signal import SIG_IGN, SIGINT, SIGQUIT, SIGTSTP, signal
 
 
-def handle_logic_op(string, isprint=False):
+def handle_logic_op(string, isprint=False, operator=None):
     '''
     Tasks:
     - First get step need to do from parse command operator
     - Run command and if exit status isn't 0 and operator is 'and' then skip
     - Else exit status is 0 and operator is 'or' then skip
+    - After handle command substituition then run exit status of command
     '''
     steps_exec = parse_command_operator(Token(string).split_token())
-    operator = ''
     output = []
-    for i, step in enumerate(steps_exec):
-        if is_skip_command(i, operator) and is_boolean_command(step['command'][0]):
-            # run command with arguments
-            command = handle_com_substitution(step['command'])
+    printf(str(steps_exec))
+    for command, next_op in steps_exec:
+        if is_skip_command(operator) and is_boolean_command(command[0]):
+            command = handle_com_substitution(command)
             result = handle_exit_status(' '.join(command))
-            if isprint:
+            if result and isprint:
                 printf(result)
             output.append(result)
-        operator = step['next_op']
+        operator = next_op
     return output
 
 
@@ -43,7 +43,8 @@ def handle_com_substitution(arguments):
     for arg in arguments:
         result = check_command_sub(arg)
         if result and result != arg:
-            new_command += handle_logic_op(result)
+            valids = [arg for arg in handle_logic_op(result) if arg]
+            new_command += [e for arg in valids for e in arg.split('\n')]
         elif result:
             new_command.append(arg)
     return new_command
@@ -57,10 +58,12 @@ def check_command_sub(arg):
     return arg
 
 
-def is_skip_command(index, operator):
+def is_skip_command(operator):
+    if not operator:
+        return True
     if operator == '&&':
-        return index == 0 or os.environ['?'] == '0'
-    return index == 0 or os.environ['?'] != '0'
+        return os.environ['?'] == '0'
+    return os.environ['?'] != '0'
 
 
 def is_boolean_command(command):
@@ -73,44 +76,44 @@ def is_boolean_command(command):
     return False
 
 
-def parse_command_operator(string):
+def parse_command_operator(args):
     '''
     Tasks:
     - Split command and logical operator into list of tuple
-    - Inside tuple is command + args and logical operators after that command
+    - Inside tuple is command + args and next logical operators after command
     - Return list of step need to do logical operators
     '''
     steps = []
-    commands = string + [" "]
+    commands = args + [" "]
     start = 0
     for i, com in enumerate(commands):
         if com == '||' or com == "&&" or com == ' ':
-            steps.append(
-                {'command': commands[start: i], 'next_op': commands[i]})
+            steps.append((commands[start: i], commands[i]))
             start = i + 1
     return steps
 
 
 def builtins_cd(directory=''):  # implement cd
+    exit_value = 0
     if directory:
         try:
             os.environ['OLDPWD'] = os.getcwd()
             os.chdir(directory)  # change working directory
             os.environ['PWD'] = os.getcwd()
-            exit_value, output = 0, ''
         except FileNotFoundError:
-            exit_value, output = 1, 'intek-sh: cd: %s: No ' \
-                'such file or directory\n' % directory
+            exit_value, error = 1, 'intek-sh: cd: %s: No ' \
+                'such file or directory' % directory
     else:  # if variable directory is empty, change working dir into homepath
         if 'HOME' not in os.environ:
-            exit_value, output = 1, 'intek-sh: cd: HOME not set'
+            exit_value, error = 1, 'intek-sh: cd: HOME not set'
         else:
             os.environ['OLDPWD'] = os.getcwd()
             homepath = os.environ['HOME']
             os.chdir(homepath)
             os.environ['PWD'] = os.getcwd()
-            exit_value, output = 0, ''
-    return exit_value, output
+    if exit_value:
+        show_error(error)
+    return exit_value, ''
 
 
 def builtins_printenv(variables=[]):  # implement printenv
@@ -141,7 +144,6 @@ def check_name(name):
 def builtins_export(variables=[]):  # implement export
     exit_value = 0
     if variables:
-        errors = []
         for variable in variables:
             if '=' in variable:
                 name, value = variable.split('=', 1)
@@ -152,29 +154,26 @@ def builtins_export(variables=[]):  # implement export
                 os.environ[name] = value
             else:
                 exit_value = 1
-                errors.append('intek-sh: export: `%s\': '
-                              'not a valid identifier\n' % variable)
-        output = '\n'.join(errors)
+                show_error('intek-sh: export: `%s\': '
+                           'not a valid identifier' % variable)
     else:
         env = builtins_printenv()[1].split('\n')
-        result = []
+        output = []
         for line in env:
-            result.append('declare -x ' + line.replace('=', '=\"', 1) + '\"')
-        output = '\n'.join(result)
-    return exit_value, output
+            output.append('declare -x ' + line.replace('=', '=\"', 1) + '\"')
+    return exit_value, '\n'.join(output)
 
 
 def builtins_unset(variables=[]):  # implement unset
     exit_value = 0
-    errors = []
     for variable in variables:
         if not check_name(variable):
             exit_value = 1
-            errors.append(
-                'intek-sh: unset: `%s\': not a valid identifier\n' % variable)
+            show_error(
+                'intek-sh: unset: `%s\': not a valid identifier' % variable)
         elif variable in os.environ:
             os.environ.pop(variable)
-    return exit_value, '\n'.join(errors)
+    return exit_value, ''
 
 
 def builtins_exit(exit_code):  # implement exit
@@ -197,16 +196,18 @@ def run_executions(command, args, input):
         process.wait()
         exit_value = process.returncode
         if err:
-            output.append(err.decode())
+            message = err.decode()
         if out:
             output.append(out.decode())
     except PermissionError:
         exit_value = 126
-        output.append('intek-sh: %s: Permission denied\n' % command)
+        message = 'intek-sh: %s: Permission denied' % command
     except FileNotFoundError:
         exit_value = 127
-        output.append('intek-sh: %s: command not found\n' % command)
-    return exit_value, '\n'.join(output)
+        message = 'intek-sh: %s: command not found' % command
+    if exit_value:
+        show_error(message)
+    return exit_value, ''.join(output)
 
 
 def run_command(command, args=[], inp=None):
@@ -228,7 +229,8 @@ def run_command(command, args=[], inp=None):
             realpath = path + '/' + command
             if os.path.exists(realpath):
                 return run_executions(realpath, args, inp)
-    return 127, 'intek-sh: %s: command not found\n' % command
+    show_error('intek-sh: %s: command not found' % command)
+    return 127, ''
 
 
 def handle_exit_status(string):
@@ -236,11 +238,12 @@ def handle_exit_status(string):
         exit_value, string = path_expansions(string)
         if exit_value:
             os.environ['?'] = str(exit_value)
-            return string
+            show_error(string)
+            return ''
     if '*' in string or '?' in string:
         string = glob_string(string)
-    command = string.split()[0]
-    args = string[len(command):].split()
+    args = Token(string, keep_quote=False).split_token()
+    command = args.pop(0)
     exit_value, output = run_command(command, args)
     os.environ['?'] = str(exit_value)
     return output
@@ -274,10 +277,14 @@ def handle_signal(sig, frame):
     os.environ['?'] = exit_code
 
 
+def show_error(error):
+    printf(error)
+
+
 def setup_signal():
     signal(SIGINT, handle_signal)
     signal(SIGTSTP, handle_signal)
-    signal(SIGQUIT, handle_signal)
+    # signal(SIGQUIT, handle_signal)
 
 
 def repl_shell():
@@ -303,6 +310,7 @@ def main():
     setup_terminal()
     setup_signal()
     repl_shell()
+
 
 if __name__ == "__main__":
     main()

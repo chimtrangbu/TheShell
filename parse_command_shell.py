@@ -5,7 +5,7 @@ class Token():
            + Also help now user is missing anything
     '''
 
-    def __init__(self, string):
+    def __init__(self, string, keep_quote=True):
         self.str = string + " "
         self.len = len(self.str)
         self.i = 0
@@ -14,6 +14,7 @@ class Token():
         self.args = []
         self.key = ''
         self.increase = False
+        self.keep_quote = keep_quote
 
     def _is_pipe(self):
         return (self.key == '>' and self.str[self.i] != ">" or
@@ -62,7 +63,8 @@ class Token():
         return self.str[self.i] != '\\' or self.key in ["'"]
 
     def _add_argument(self):
-        if self.key in self.tokens and self.str[self.i] in ['`', "|", "&", ">", "<"]:
+        if self.key in self.tokens and self.str[self.i] in ['`', "|", "&", ">", "<"] or\
+        (self.str[self.i] in ['"',"'"] and self.keep_quote):
             self.param += self.str[self.i]
         self.args.append(self.param)
         if self._change_param():
@@ -78,7 +80,7 @@ class Token():
 
     def _set_param_key(self):
         self.key = self.str[self.i]
-        self.param = self.str[self.i] if self.key not in ['"', "'"] else ''
+        self.param = self.str[self.i] if self.key not in ['"', "'"] or self.keep_quote else ''
 
     def _change_param(self):
         return self.param and (self.str[self.i] in self.tokens and self.key not in self.tokens) or\
