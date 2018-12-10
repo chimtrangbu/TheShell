@@ -28,13 +28,13 @@ def get_suggest(txt, mode):
           + One is command
           + Two is file or directory at that directory
     '''
-    if mode is 'command':
+    if mode == 'command':
         valids = get_all_commands()
-        suggests = [i for i in valids if i.lower().startswith(txt)]
     else:
         valids = get_all_files(txt)
-        suggests = [i for i in valids]
-    return suggests
+    if not txt:
+        return valids
+    return [i for i in valids if i.startswith(txt)]
 
 
 def is_possible_completion(suggests, text):
@@ -68,7 +68,7 @@ def handle_completion(text, mode):
            + Then return it
     '''
     list_suggest = get_suggest(text, mode=mode)
-    if len(list_suggest) is 1:
+    if len(list_suggest) == 1:
         return list_suggest[0]
     elif list_suggest and is_possible_completion(list_suggest, text):
         return find_common_suggest(list_suggest, text)
