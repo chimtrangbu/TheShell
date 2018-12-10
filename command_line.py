@@ -1,19 +1,23 @@
 import curses
+import os
 from completion import handle_completion, get_suggest
 
 
-def insert (source_str, insert_str, pos):
+def insert(source_str, insert_str, pos):
     return source_str[:pos]+insert_str+source_str[pos:]
+
 
 def write_file(filename, content, mode='w'):
     with open(filename, mode) as f:
         f.write(content)
         return
 
+
 class Shell:
     HISTORY_STACK = []
     STACK_CURRENT_INDEX = 0
     PROMPT = "intek-sh$ "
+
     def __init__(self):
         global window
         window = curses.initscr()
@@ -24,18 +28,21 @@ class Shell:
         self.last_cursor_pos = (0, 0)
         self.write_win_file = True
         self.windowlog = 'windowlog'
-        self.height, self.width =  window.getmaxyx()
+        open(self.windowlog, 'w').close()
+        self.height, self.width = window.getmaxyx()
         self.preivous_key = ""
         self._get_history()
+
     def _get_history(self):
         open('history', 'a').close()
         with open('history', 'r') as f:
             for line in f:
                 Shell.HISTORY_STACK.append(line.strip())
-    def write_history_file(self):
-        write_file('history',"\n".join(Shell.HISTORY_STACK),'a')
 
-    def print_history(self, index = False):
+    def write_history_file(self):
+        write_file('history', "\n".join(Shell.HISTORY_STACK), 'a')
+
+    def print_history(self, index=False):
         if not index:
             for i in range(len(Shell.HISTORY_STACK)):
                 self.printf("{:3d}".format(i)+'  '+str(Shell.HISTORY_STACK[i]))
@@ -45,51 +52,66 @@ class Shell:
             self.printf(Shell.HISTORY_STACK[index])
             return Shell.HISTORY_STACK[index]
 
-
     def read_win_log(self):
         with open(self.windowlog, 'r') as f:
-            data = f.read()
+            data = f.read().replace('@', '')
         if data.endswith('intek-sh$ ') or data.endswith('intek-sh$'):
-            return data + ' '
+            return data
         else:
             return data
 
-    def write_win_log(self, file):
+    def write_win_log(self, file, content='', end='', n=False, nlines=1, startl=False):
         pos = self.get_curs_pos()
-        with open(self.windowlog,'w') as f:
-            s = ''
-            for i in range(pos[0]+2):
-                data = window.instr(i,0).decode().strip(' ')
-                if len(data) < self.width:
-                    s += data + '\n'
+        data = self.read_win_log()
+        if len(content):
+            data = content
+        if n is not False:
+            input = ''
+            for i in range(startl, startl+nlines):
+                if i != startl + nlines - 1:
+                    input += window.instr(i, 0).decode().strip()
                 else:
-                    s += data
-            f.write(s.strip('\n'))
+                    input += window.instr(i, 0).decode().strip()
+            input = input[10:n]
+                
+        else:
+            input = ''
+            for i in range(startl, startl+nlines):
+                if i != pos[0] + nlines - 1:
+                    input += window.instr(i, 0).decode().strip()
+                else:
+                    input += window.instr(i, 0).decode().strip()
+            input = input[10:]
+        with open(self.windowlog, 'w') as f:
+            f.write(data+input+end)
         window.move(pos[0], pos[1])
 
-    def	get_str(self, prompt=""):
+    def get_str(self, prompt=""):
         self.printf(prompt, end='')
         return window.getstr()
 
-    def get_ch(self, prompt=""):
+    def get_ch(self, prompt="", write_win_file=True):
         pos = self.get_curs_pos()
         self.add_str(pos[0], 0, prompt)
+        if write_win_file:
+            write_file(self.windowlog, Shell.PROMPT, 'a')
         return chr(window.getch())
 
     def printf(self, string="", end='\n'):
         pos = self.get_curs_pos()
         if string.endswith('\n'):
             self.add_str(pos[0], pos[1], string)
+            write_file(self.windowlog, '@'+string, 'a')
         else:
             self.add_str(pos[0], pos[1], string+end)
-        write_file(self.windowlog, string+'\n','a')
+            write_file(self.windowlog, '@'+string+end, 'a')
 
     def add_str(self, y, x, string):
         window.addstr(y, x, string)
         window.refresh()
 
     def get_curs_pos(self):
-        #window.refresh()
+        # window.refresh()
         pos = curses.getsyx()
         return (pos[0], pos[1])
 
@@ -100,7 +122,7 @@ class Shell:
             y = pos[0]
         if x is None:
             x = pos[1]
-        curses.setsyx(y,x)
+        curses.setsyx(y, x)
         curses.doupdate()
 
     def move_curs(self, dy, dx):
@@ -133,24 +155,27 @@ class Shell:
                 else:
                     window.move(pos[0]+1, self.width-1)
 
-
     def _process_KEY_UP(self, input, curs_pos):
         try:
             if len(Shell.HISTORY_STACK) == 0:
                 return input
-            if input not in [Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX],'\n','']:
+            if input not in [Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX], '\n', '']:
                 Shell.HISTORY_STACK.append(input)
                 Shell.STACK_CURRENT_INDEX -= 1
-            if abs(Shell.STACK_CURRENT_INDEX) != len(Shell.HISTORY_STACK): # Not meet the start
-                self.delete_nlines(self.line_count(Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX]), startl=curs_pos[0], revese=False)
-                #window.deleteln()
-                window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX-1]) #print the previous
+            if abs(Shell.STACK_CURRENT_INDEX) != len(Shell.HISTORY_STACK):  # Not meet the start
+                self.delete_nlines(self.line_count(
+                    Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX]), startl=curs_pos[0], revese=False)
+                # window.deleteln()
+                # print the previous
+                window.addstr(
+                    curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX-1])
                 input = Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX-1]
                 Shell.STACK_CURRENT_INDEX -= 1
             else:
-                if input is not Shell.HISTORY_STACK[0]: # EndOfStack
+                if input is not Shell.HISTORY_STACK[0]:  # EndOfStack
                     self.delete_nlines(self.line_count(Shell.HISTORY_STACK[0]))
-                    window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[0])
+                    window.addstr(
+                        curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[0])
                     input = Shell.HISTORY_STACK[0]
             return input
         except IndexError:
@@ -160,28 +185,35 @@ class Shell:
         try:
             if len(Shell.HISTORY_STACK) == 0:
                 return input
-            if input not in [Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX],'\n','']:
+            if input not in [Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX], '\n', '']:
                 Shell.HISTORY_STACK.append(input)
                 Shell.STACK_CURRENT_INDEX += 1
-            if Shell.STACK_CURRENT_INDEX != -1: # Not meet the end of stack
-                self.delete_nlines(self.line_count(Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX]))
-                window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX+1]) #print the previous
+            if Shell.STACK_CURRENT_INDEX != -1:  # Not meet the end of stack
+                self.delete_nlines(self.line_count(
+                    Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX]))
+                # print the previous
+                window.addstr(
+                    curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX+1])
                 input = Shell.HISTORY_STACK[Shell.STACK_CURRENT_INDEX+1]
                 Shell.STACK_CURRENT_INDEX += 1
             else:
-                if input is not Shell.HISTORY_STACK[-1]: # EndOfStack
-                    self.delete_nlines(self.line_count(Shell.HISTORY_STACK[-1]))
-                    window.addstr(curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[-1])
+                if input is not Shell.HISTORY_STACK[-1]:  # EndOfStack
+                    self.delete_nlines(
+                        self.line_count(Shell.HISTORY_STACK[-1]))
+                    window.addstr(
+                        curs_pos[0], 0, Shell.PROMPT + Shell.HISTORY_STACK[-1])
                     input = Shell.HISTORY_STACK[-1]
             return input
         except IndexError:
             pass
     ##################################################################################
+
     def process_input(self):
         char = self.get_ch(Shell.PROMPT)
-        input = "" # inittial input
+        input = ""  # inittial input
 
         input_pos = self.get_curs_pos()
+        last_data = self.read_win_log()
         while char not in ['\n']:
             ######################### KEY process ####################################
             """
@@ -194,13 +226,13 @@ class Shell:
                 window.clear()
                 window.refresh()
                 data = self.read_win_log()
-                window.addstr(0,0,data)
+                window.addstr(0, 0, data)
                 window.refresh()
-                (self.height, self.width) =  window.getmaxyx()
+                (self.height, self.width) = window.getmaxyx()
                 pos = self.get_curs_pos()
                 step = pos[0]*self.width + pos[1]
                 loc_step = step - lens
-                input_pos = loc_step//self.width, loc_step%self.width
+                input_pos = loc_step//self.width, loc_step % self.width
                 #window.move(input_pos[0] + lens//self.width, (step + lens) % self.width)
                 char = ''
 
@@ -236,13 +268,15 @@ class Shell:
                     self.set_curs_pos(step // self.width, step % self.width)
                 char = ''
 
-            elif char == chr(127): # curses.BACKSPACE
+            elif char == chr(127):  # curses.BACKSPACE
                 self.preivous_key = ''
                 pos = self.get_curs_pos()
-                del_loc = pos[0]*self.width + pos[1] - (input_pos[0]*self.width + input_pos[1])
+                del_loc = pos[0]*self.width + pos[1] - \
+                    (input_pos[0]*self.width + input_pos[1])
                 if del_loc > 0:
                     input = input[:del_loc-1] + input[del_loc:]
-                self.delete_nlines(self.line_count(input), input_pos[0], revese=False)
+                self.delete_nlines(self.line_count(
+                    input), input_pos[0], revese=False)
                 window.addstr(input_pos[0], 0, Shell.PROMPT + input)
                 if pos[1] > 10 or pos[0] != input_pos[0]:
                     self.set_curs_pos(pos[0], pos[1]-1)
@@ -250,8 +284,8 @@ class Shell:
                     self.set_curs_pos(pos[0], pos[1])
                 char = ''
 
-            elif ord(char) == 9: # curses.TAB
-                if self.preivous_key in ['TAB','TAB2']: # second TAB
+            elif ord(char) == 9:  # curses.TAB
+                if self.preivous_key in ['TAB', 'TAB2']:  # second TAB
                     data = ''
                     if input.endswith(' '):
                         data = "\n".join(get_suggest("", 'file'))
@@ -272,50 +306,47 @@ class Shell:
             elif char == chr(curses.KEY_DC):
                 self.preivous_key = ''
                 pos = self.get_curs_pos()
-                del_loc = pos[0]*self.width + pos[1] - (input_pos[0]*self.width + input_pos[1]) + 1
+                del_loc = pos[0]*self.width + pos[1] - \
+                    (input_pos[0]*self.width + input_pos[1]) + 1
                 if del_loc > 0:
                     input = input[:del_loc-1] + input[del_loc:]
-                self.delete_nlines(self.line_count(input), input_pos[0], revese=False)
+                self.delete_nlines(self.line_count(
+                    input), input_pos[0], revese=False)
                 window.addstr(input_pos[0], 0, Shell.PROMPT + input)
                 self.set_curs_pos(pos[0], pos[1])
                 char = ''
-
-
-
-
-
-
 
             ##############################################################################################
             # Insert mode
             curs_pos = self.get_curs_pos()
             if char != '':
                 self.preivous_key = char
-                insert_loc = curs_pos[0]*self.width + curs_pos[1] - (input_pos[0]*self.width + input_pos[1])
+                insert_loc = curs_pos[0]*self.width + curs_pos[1] - \
+                    (input_pos[0]*self.width + input_pos[1])
                 input = input[:insert_loc] + char + input[insert_loc:]
                 window.addstr(input_pos[0], 10, input)
                 self.set_curs_pos(curs_pos[0], curs_pos[1]+1)
 
             # Write on window
-            self.write_win_log('windowlog')
+            self.write_win_log(self.windowlog, last_data, end='', nlines=2, startl=input_pos[0])
             # loop again
             char = chr(window.getch())
 
-
-        if self.preivous_key not in['TAB2'] :
+        if self.preivous_key not in['TAB2']:
             step = input_pos[0]*self.width + input_pos[1] + len(input)
             window.move(step // self.width, step % self.width)
+            self.write_win_log(self.windowlog, content='', n=0, end='\n')
 
-        if input not in ['\n','']:
+        if input not in ['\n', '']:
             Shell.HISTORY_STACK.append(input)
             Shell.STACK_CURRENT_INDEX = 0
 
         # Write the PROMPT tp file when press Enter with APPEND mode
-        write_file(self.windowlog, '\n'+Shell.PROMPT, mode = 'a')
+        #write_file(self.windowlog, '\n'+Shell.PROMPT, mode = 'a')
         # Refresh the window and enter newline
         if self.preivous_key in ['TAB2']:
-            char = self.get_ch(Shell.PROMPT)
-            input = ""  
+            char = self.get_ch(Shell.PROMPT, write_win_file=False)
+            input = ""
         else:
             window.addstr("\n")
         window.refresh()
