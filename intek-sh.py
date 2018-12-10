@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from command_line import Shell
+from command_line import Shell, write_file
 import os
 import sys
 import curses
@@ -178,6 +178,7 @@ def builtins_unset(variables=[]):  # implement unset
 
 
 def builtins_exit(exit_code):  # implement exit
+    global shell
     printf('exit')
     curses.endwin()
     exit_value = 0
@@ -186,6 +187,7 @@ def builtins_exit(exit_code):  # implement exit
             exit_value = int(exit_code)
         else:
             printf('intek-sh: exit: ' + exit_code)
+    shell.write_history_file()
     sys.exit(exit_value)
 
 
@@ -288,7 +290,8 @@ def repl_shell():
                 shell.print_history()
             elif choice.startswith('!'):
                 try:
-                    shell.print_history(int(choice[1:]))
+                    command = shell.print_history(int(choice[1:]))
+                    handle_logic_op(command, isprint=True)
                 except Exception:
                     printf("intek-sh: syntax error near unexpected token `newline`")
             else:
@@ -301,8 +304,9 @@ def repl_shell():
 
 def main():
     setup_terminal()
-    setup_signal()
+    #setup_signal()
     repl_shell()
+
 
 if __name__ == "__main__":
     main()
