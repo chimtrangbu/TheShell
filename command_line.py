@@ -14,8 +14,6 @@ class Shell:
     HISTORY_STACK = []
     STACK_CURRENT_INDEX = 0
     PROMPT = "intek-sh$ "
-
-
     def __init__(self):
         global window
         window = curses.initscr()
@@ -26,8 +24,16 @@ class Shell:
         self.last_cursor_pos = (0, 0)
         self.write_win_file = True
         self.windowlog = 'windowlog'
-        (self.height, self.width) =  window.getmaxyx()
+        self.height, self.width =  window.getmaxyx()
         self.preivous_key = ""
+        self._get_history()
+    def _get_history(self):
+        open('history', 'a').close()
+        with open('history', 'r') as f:
+            for line in f:
+                Shell.HISTORY_STACK.append(line.strip())
+    def write_history_file(self):
+        write_file('history',"\n".join(Shell.HISTORY_STACK),'a')
 
     def print_history(self, index = False):
         if not index:
@@ -37,6 +43,7 @@ class Shell:
             Shell.HISTORY_STACK.pop()
             Shell.STACK_CURRENT_INDEX = 0
             self.printf(Shell.HISTORY_STACK[index])
+            return Shell.HISTORY_STACK[index]
 
 
     def read_win_log(self):
@@ -125,8 +132,6 @@ class Shell:
                     window.move(pos[0]-1, self.width-1)
                 else:
                     window.move(pos[0]+1, self.width-1)
-
-
 
 
     def _process_KEY_UP(self, input, curs_pos):
@@ -231,7 +236,7 @@ class Shell:
                     self.set_curs_pos(step // self.width, step % self.width)
                 char = ''
 
-            elif char == chr(263): # curses.BACKSPACE
+            elif char == chr(127): # curses.BACKSPACE
                 self.preivous_key = ''
                 pos = self.get_curs_pos()
                 del_loc = pos[0]*self.width + pos[1] - (input_pos[0]*self.width + input_pos[1])
@@ -246,26 +251,21 @@ class Shell:
                 char = ''
 
             elif ord(char) == 9: # curses.TAB
-                if self.preivous_key == 'TAB': # second TAB
+                if self.preivous_key in ['TAB','TAB2']: # second TAB
+                    data = ''
                     if input.endswith(' '):
-                        data = "\n".join(get_suggest(input, 'file'))
+                        data = "\n".join(get_suggest("", 'file'))
                     else:
-                        data = "\n".join(get_suggest(input, 'command'))
+                        data = "\n".join(get_suggest(input.strip(), 'command'))
                     if len(data):
                         self.printf('\n'+data)
-                    self.preivous_key = 'TAB2'
-                    break
-
+                        self.preivous_key = 'TAB2'
+                        break
                 else:
-                    if input.endswith(' '):
-                        data = "\n".join(get_suggest(input, 'file'))
-                        if len(data):
-                            self.printf('\n'+data)
-                            self.preivous_key = 'TAB2'
-                            break
                     if input != handle_completion(input, 'command'):
                         input = handle_completion(input, 'command')
-                        self.preivous_key = 'TAB'
+                    self.preivous_key = 'TAB'
+
                 window.addstr(input_pos[0], 10, input)
                 window.refresh()
                 char = ''
@@ -302,7 +302,7 @@ class Shell:
             char = chr(window.getch())
 
 
-        if self.preivous_key != 'TAB2':
+        if self.preivous_key not in['TAB2'] :
             step = input_pos[0]*self.width + input_pos[1] + len(input)
             window.move(step // self.width, step % self.width)
 
@@ -313,9 +313,10 @@ class Shell:
         # Write the PROMPT tp file when press Enter with APPEND mode
         write_file(self.windowlog, '\n'+Shell.PROMPT, mode = 'a')
         # Refresh the window and enter newline
-        if self.preivous_key != 'TAB2':
+        if self.preivous_key in ['TAB2']:
+            char = self.get_ch(Shell.PROMPT)
+            input = ""  
+        else:
             window.addstr("\n")
-
-        self.preivous_key = ''
         window.refresh()
         return input
