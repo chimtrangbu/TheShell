@@ -20,7 +20,7 @@ def handle_logic_op(string, isprint=False, operator=None):
     '''
     steps_exec = parse_command_operator(Token(string).split_token())
     output = []
-    printf(str(steps_exec))
+    # printf(str(steps_exec))
     for command, next_op in steps_exec:
         if is_skip_command(operator) and is_boolean_command(command[0]):
             command = handle_com_substitution(command)
@@ -190,7 +190,20 @@ def builtins_exit(exit_code):  # implement exit
     sys.exit(exit_value)
 
 
-def run_executions(command, args, input):
+def run_builtins(command, args):
+    if command == 'cd':
+        return builtins_cd(' '.join(args))
+    elif command == 'printenv':
+        return builtins_printenv(args)
+    elif command == 'export':
+        return builtins_export(args)
+    elif command == 'unset':
+        return builtins_unset(args)
+    else:
+        return builtins_exit(' '.join(args))
+
+
+def run_execution(command, args, input):
     output = []
     try:
         process = Popen([command]+args, stdin=input, stdout=PIPE, stderr=PIPE)
@@ -212,25 +225,24 @@ def run_executions(command, args, input):
     return exit_value, ''.join(output)
 
 
+def run_utility(command, args, input):
+    paths = os.environ['PATH'].split(':')
+    for path in paths:
+        realpath = path + '/' + command
+        if os.path.exists(realpath):
+            return run_execution(realpath, args, input)
+    show_error('intek-sh: %s: command not found' % command)
+    return 127, ''
+
+
 def run_command(command, args=[], inp=None):
-    if command == 'cd':
-        return builtins_cd(' '.join(args))
-    elif command == 'printenv':
-        return builtins_printenv(args)
-    elif command == 'export':
-        return builtins_export(args)
-    elif command == 'unset':
-        return builtins_unset(args)
-    elif command == 'exit':
-        return builtins_exit(' '.join(args))
+    built_ins = ('cd', 'printenv', 'export', 'unset', 'exit')
+    if command in built_ins:
+        return run_builtins(command, args)
     elif '/' in command:
-        return run_executions(command, args, inp)
+        return run_execution(command, args, inp)
     elif 'PATH' in os.environ:
-        paths = os.environ['PATH'].split(':')
-        for path in paths:
-            realpath = path + '/' + command
-            if os.path.exists(realpath):
-                return run_executions(realpath, args, inp)
+        return run_utility(command, args, inp)
     show_error('intek-sh: %s: command not found' % command)
     return 127, ''
 
@@ -311,7 +323,7 @@ def repl_shell():
 
 def main():
     setup_terminal()
-    #setup_signal()
+    setup_signal()
     repl_shell()
 
 

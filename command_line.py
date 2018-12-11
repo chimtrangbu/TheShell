@@ -236,7 +236,7 @@ class Shell:
                     self.set_curs_pos(step // self.width, step % self.width)
                 char = ''
 
-            elif char == chr(127): # curses.BACKSPACE
+            elif char == chr(curses.KEY_BACKSPACE): # curses.BACKSPACE
                 self.preivous_key = ''
                 pos = self.get_curs_pos()
                 del_loc = pos[0]*self.width + pos[1] - (input_pos[0]*self.width + input_pos[1])
@@ -315,7 +315,7 @@ class Shell:
         # Refresh the window and enter newline
         if self.preivous_key in ['TAB2']:
             char = self.get_ch(Shell.PROMPT)
-            input = ""  
+            input = ""
         else:
             window.addstr("\n")
         window.refresh()
