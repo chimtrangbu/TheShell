@@ -85,7 +85,7 @@ def process_KEY_BACKSPACE(input, input_pos):
 
 
 def process_KEY_TAB(input, input_pos):
-    if Shell.preivous_key in ['TAB', 'TAB2']:  # second TAB
+    if Shell.last_key in ['TAB', 'TAB2']:  # second TAB
         data = ''
         if input.endswith(' '):
             data = "\n".join(get_suggest("", 'file'))
@@ -93,11 +93,11 @@ def process_KEY_TAB(input, input_pos):
             data = "\n".join(get_suggest(input.strip(), 'command'))
         if len(data):
             Shell.printf('\n'+data)
-            Shell.preivous_key = 'TAB2'
+            Shell.last_key = 'TAB2'
     else:
         if input != handle_completion(input, 'command'):
             input = handle_completion(input, 'command')
-        Shell.preivous_key = 'TAB'
+        Shell.last_key = 'TAB'
     window.addstr(input_pos[0], 10, input)
     window.refresh()
 
@@ -135,6 +135,7 @@ def process_insert_mode(input, input_pos, char):
     input = input[:insert_loc] + char + input[insert_loc:]
     window.addstr(input_pos[0], 10, input)
     Shell.move(pos[0], pos[1]+1)
+    return input
 
 
 def process_input():
@@ -154,27 +155,27 @@ def process_input():
             char = ''
 
         elif char == chr(curses.KEY_UP):
-            Shell.preivous_key = char
+            Shell.last_key = char
             input = process_KEY_UP(input, input_pos)
             char = ''
 
         elif char == chr(curses.KEY_DOWN):
-            Shell.preivous_key = char
+            Shell.last_key = char
             input = process_KEY_DOWN(input, input_pos)
             char = ''
 
         elif char == chr(curses.KEY_LEFT):
-            Shell.preivous_key = char
+            Shell.last_key = char
             process_KEY_LEFT(input, input_pos)
             char = ''
 
         elif char == chr(curses.KEY_RIGHT):
-            Shell.preivous_key = char
+            Shell.last_key = char
             process_KEY_RIGHT(input, input_pos)
             char = ''
 
         elif char == chr(127):  # curses.BACKSPACE
-            Shell.preivous_key = ''
+            Shell.last_key = ''
             process_KEY_BACKSPACE(input, input_pos)
             char = ''
 
@@ -185,18 +186,18 @@ def process_input():
         elif char == chr(curses.KEY_DC):
             process_KEY_DELETE(input, input_pos)
             char = ''
-        
+
         ##############################################################################################
         # Insert mode
         if char != '':
-            process_insert_mode(input, input_pos, char)
+            input = process_insert_mode(input, input_pos, char)
 
         # Write on window
 
         #Shell.write_log(overwrite_last_data=last_data, Shell.read_nlines(startl=input_pos[0], n=Shell.count_lines(input)), end='')
         char = chr(window.getch())
 
-    if Shell.preivous_key not in['TAB2']:
+    if Shell.last_key not in['TAB2']:
         step = input_pos[0]*Shell.WIDTH + input_pos[1] + len(input)
         window.move(step // Shell.WIDTH, step % Shell.WIDTH)
         Shell.write_log(new='\n',mode='a')
@@ -206,7 +207,7 @@ def process_input():
         Shell.STACK_CURRENT_INDEX = 0
 
 
-    if Shell.preivous_key in ['TAB2']:
+    if Shell.last_key in ['TAB2']:
         char = Shell.getch(Shell.PROMPT)
         input = ""
     else:
