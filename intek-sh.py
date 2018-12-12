@@ -10,25 +10,25 @@ from parse_command_shell import Token
 from signal import SIG_IGN, SIGINT, SIGQUIT, SIGTSTP, signal
 
 
-def handle_logic_op(string, isprint=False, operator=None):
+def handle_logic_op(string, *, operator=None):
     '''
     Tasks:
     - First get step need to do from parse command operator
     - Run command and if exit status isn't 0 and operator is 'and' then skip
     - Else exit status is 0 and operator is 'or' then skip
-    - After handle command substituition then run exit status of command
+    - After handle command substitution then run exit status of command
     '''
+    global sig_now
     steps_exec = parse_command_operator(Token(string).split_token())
     output = []
-    # printf(str(steps_exec))
     for command, next_op in steps_exec:
         if is_skip_command(operator) and is_boolean_command(command[0]):
             command = handle_com_substitution(command)
             result = handle_exit_status(' '.join(command))
-            if result and isprint:
-                printf(result)
             output.append(result)
         operator = next_op
+        if sig_now:
+            return []
     return output
 
 
@@ -39,14 +39,19 @@ def handle_com_substitution(arguments):
     - If string isn't empty then run handle logical operator to get result of that command
     - If string is empty not need do anthing
     '''
+    global com_sub, sig_now
     new_command = []
     for arg in arguments:
         result = check_command_sub(arg)
         if result and result != arg:
+            com_sub = True
             valids = [arg for arg in handle_logic_op(result) if arg]
             new_command += [e for arg in valids for e in arg.split('\n')]
+            com_sub = False
         elif result:
             new_command.append(arg)
+        if sig_now:
+            return []
     return new_command
 
 
@@ -204,22 +209,31 @@ def run_builtins(command, args):
 
 
 def run_execution(command, args, input):
+    global process, com_sub, sig_now
     output = []
+    exit_value = 0
     try:
         process = Popen([command]+args, stdin=input, stdout=PIPE, stderr=PIPE)
-        out, err = process.communicate()  # byte
-        process.wait()
+        line = process.stdout.readline().decode()
+        while line and sig_now is None:
+            output.append(line)
+            if not com_sub:
+                printf(line, end='')
+            line = process.stdout.readline().decode()
+        if sig_now is None:
+            process.wait()
         exit_value = process.returncode
-        if err:
-            message = err.decode()
-        if out:
-            output.append(out.decode())
+        if exit_value:
+            message = process.stderr.read().decode()
     except PermissionError:
         exit_value = 126
         message = 'intek-sh: %s: Permission denied' % command
     except FileNotFoundError:
         exit_value = 127
         message = 'intek-sh: %s: command not found' % command
+    except Exception as e:
+        message = str(e)
+        exit_value = 2
     if exit_value:
         show_error(message)
     return exit_value, ''.join(output)
@@ -236,9 +250,13 @@ def run_utility(command, args, input):
 
 
 def run_command(command, args=[], inp=None):
+    global com_sub
     built_ins = ('cd', 'printenv', 'export', 'unset', 'exit')
     if command in built_ins:
-        return run_builtins(command, args)
+        exit_code, output = run_builtins(command, args)
+        if not com_sub and output:
+            printf(output)
+        return exit_code, output
     elif '/' in command:
         return run_execution(command, args, inp)
     elif 'PATH' in os.environ:
@@ -248,6 +266,9 @@ def run_command(command, args=[], inp=None):
 
 
 def handle_exit_status(string):
+    global sig_now
+    if sig_now:
+        return []
     if '$' in string or '~' in string:
         exit_value, string = path_expansions(string)
         if exit_value:
@@ -259,7 +280,8 @@ def handle_exit_status(string):
     args = Token(string, keep_quote=False).split_token()
     command = args.pop(0)
     exit_value, output = run_command(command, args)
-    os.environ['?'] = str(exit_value)
+    if exit_value is not None:
+        os.environ['?'] = str(exit_value)
     return output
 
 
@@ -273,22 +295,44 @@ def printf(string, end='\n'):
 
 
 def setup_terminal():
-    global shell
+    global shell, com_sub, process, sig_now
+    process = None
+    sig_now = None
+    com_sub = False
     shell = Shell()
     os.environ['?'] = '0'
 
 
+def handle_child_process(sig):
+    global process, sig_now
+    if process:
+        try:
+            sig_now = sig
+            os.kill(process.pid, sig)
+        except ProcessLookupError:
+            # printf("error finding process")
+            sig_now = None
+            return None
+        if sig == SIGQUIT:
+            return 131
+        return 148
+    return None
+
+
 def handle_signal(sig, frame):
+    global process
     if sig == SIGINT:
         printf('^C')
-        exit_code = '130'
+        handle_child_process(sig)
+        exit_code = 130
     elif sig == SIGQUIT:
         printf('^\\')
-        exit_code = '131'
+        exit_code = handle_child_process(sig)
     else:
         printf('^Z')
-        exit_code = '148'
-    os.environ['?'] = exit_code
+        exit_code = handle_child_process(sig)
+    if exit_code is not None:
+        os.environ['?'] = str(exit_code)
 
 
 def show_error(error):
@@ -302,19 +346,18 @@ def setup_signal():
 
 
 def repl_shell():
+    global sig_now, process
     while True:
         try:
             choice = shell.process_input()
+            if choice.startswith('!'):
+                choice = shell.print_history(int(choice[1:]))
             if choice == 'history':
                 shell.print_history()
-            elif choice.startswith('!'):
-                try:
-                    command = shell.print_history(int(choice[1:]))
-                    handle_logic_op(command, isprint=True)
-                except Exception:
-                    printf("intek-sh: syntax error near unexpected token `newline`")
             else:
-                handle_logic_op(choice, isprint=True)
+                handle_logic_op(choice)
+                sig_now = None
+                process = None
         except IndexError:
             pass
         except ValueError:
