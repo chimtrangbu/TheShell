@@ -38,6 +38,8 @@ class Shell:
         """
         Shell.windowlog = 'windowlog'
         open(Shell.windowlog, 'w').close()
+        Shell.historylog = 'history'
+        open(Shell.historylog,'w').close()
         Shell.newline_mark = '@'
         Shell.last_key = ''
         Shell.input = ''
