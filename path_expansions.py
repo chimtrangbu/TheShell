@@ -2,7 +2,6 @@
 
 from os import path, getenv
 import os
-# from built_ins import check_name
 
 
 def check_name(name):
@@ -16,7 +15,6 @@ def check_name(name):
 
 
 def expand_tilde(arg):
-    # expand tilde
     cur_path = getenv('PWD')
     old_path = getenv('OLDPWD')
     arg = path.expanduser(arg)
@@ -28,7 +26,6 @@ def expand_tilde(arg):
 
 
 def tilde_expansions(string):
-    # tilde expansions
     args = string.split()
     for i, arg in enumerate(args):
         if '~' in arg:
@@ -43,16 +40,15 @@ def tilde_expansions(string):
 
 
 def parameter_expansions(string):
-    # parameter expansions
     exit_value = 0
     string = path.expandvars(string)
     if '$?' in string:
         string = string.replace('$?', str(os.environ['?']))
     while '$' in string:
         if '${' in string:
-            name = string[string.find('${')-1:string.find('}')+1]
+            name = string[string.find('${'):string.find('}')+1]
             if check_name(name[3:-1]):
-                string = string[:string.find('${')-1] + \
+                string = string[:string.find('${')] + \
                          string[string.find('}')+1:]
                 continue
             else:
@@ -72,9 +68,20 @@ def path_expansions(string):
     if '~' in string:
         string = tilde_expansions(string)
     if '$' in string:
-        exit_value, string = parameter_expansions(string)
+        if ' $ ' in string:
+            ministrings = string.split(' $ ')
+            for i, ministring in enumerate(ministrings):
+                exit_value, s = parameter_expansions(ministring)
+                if exit_value:
+                    return exit_value, s
+                else:
+                    ministrings[i] = s
+            string = ' $ '.join(ministrings)
+        else:
+            exit_value, string = parameter_expansions(string)
     return exit_value, string
 
 
-# os.environ['?']='0'
-# print(path_expansions('$?'))
+# if __name__ == "__main__":
+#     print(path_expansions("echo +${dawdawd}"))
+    # print(path_expansions("echo +$ {PATH } _adwad${PATH}"))
