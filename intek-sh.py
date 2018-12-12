@@ -20,7 +20,7 @@ def handle_logic_op(string, isprint=False, operator=None):
     '''
     steps_exec = parse_command_operator(Token(string).split_token())
     output = []
-    printf(str(steps_exec))
+
     for command, next_op in steps_exec:
         if is_skip_command(operator) and is_boolean_command(command[0]):
             command = handle_com_substitution(command)

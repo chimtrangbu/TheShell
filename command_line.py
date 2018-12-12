@@ -25,7 +25,6 @@ class Shell:
         curses.noecho()
         window.keypad(True)
         window.scrollok(True)
-        self.last_cursor_pos = (0, 0)
         self.write_win_file = True
         self.windowlog = 'windowlog'
         open(self.windowlog, 'w').close()
@@ -315,7 +314,7 @@ class Shell:
                 window.addstr(input_pos[0], 0, Shell.PROMPT + input)
                 self.set_curs_pos(pos[0], pos[1])
                 char = ''
-
+            
             ##############################################################################################
             # Insert mode
             curs_pos = self.get_curs_pos()
