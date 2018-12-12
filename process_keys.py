@@ -125,22 +125,22 @@ def process_KEY_RESIZE(input, input_pos):
     window.addstr(0, 0, data)
     window.refresh()
     Shell.HEIGHT, Shell.WIDTH = window.getmaxyx()
-    pos = Shell.read_log()
+    pos = Shell.cursor_pos()
     step = pos[0]*Shell.WIDTH + pos[1]
     loc_step = step - len(input)
     input_pos = loc_step//Shell.WIDTH, loc_step % Shell.WIDTH
     #window.move(input_pos[0] + lens//self.width, (step + lens) % self.width)
 
 
-def process_insert_mode(input, input_pos, char):
+def process_insert_mode(input, input_pos, char, last_data):
     pos = Shell.cursor_pos()
     insert_loc = pos[0]*Shell.WIDTH + pos[1] - \
         (input_pos[0]*Shell.WIDTH + input_pos[1])
     input = input[:insert_loc] + char + input[insert_loc:]
     window.addstr(input_pos[0], 10, input)
-    #Shell.move(pos[0], pos[1]+1)
-    curses.setsyx(pos[0], pos[1]+1)
-    curses.doupdate()
+    Shell.write_log(overwrite_last_data=last_data, new=Shell.read_nlines(startl=input_pos[0], n = Shell.count_lines(input)), end='', mode='w')
+    Shell.move(pos[0], pos[1]+1)
+        
     return input
 
 
@@ -180,7 +180,7 @@ def process_input():
             process_KEY_RIGHT(input, input_pos)
             char = ''
 
-        elif char == chr(curses.KEY_BACKSPACE):  # curses.BACKSPACE
+        elif char == chr(curses.KEY_BACKSPACE) or ord(char) == 127:  # curses.BACKSPACE
             Shell.last_key = ''
             input = process_KEY_BACKSPACE(input, input_pos)
             char = ''
@@ -196,10 +196,10 @@ def process_input():
         ##############################################################################################
         # Insert mode
         if char != '':
-            input = process_insert_mode(input, input_pos, char)
 
+            input = process_insert_mode(input, input_pos, char, last_data)
+            #Shell.write_log(overwrite_last_data=last_data, new=Shell.read_nlines(startl=input_pos[0], n = Shell.count_lines(input)), end='', mode='w')
 
-        Shell.write_log(overwrite_last_data=last_data, new=Shell.read_nlines(startl=input_pos[0], n = Shell.count_lines(input)), end='', mode='w')
         char = chr(window.getch())
 
     if Shell.last_key not in['TAB2']:

@@ -43,6 +43,8 @@ class Shell:
         Shell.newline_mark = '@'
         Shell.last_key = ''
         Shell.input = ''
+        Shell.go_to_end = False
+        Shell.go_to_home = False
 
     def _update_winsize(self):
         Shell.HEIGHT, Shell.WIDTH = window.getmaxyx()
@@ -100,8 +102,13 @@ class Shell:
     @classmethod
     def move(Shell, y, x, refresh=True):
         window.refresh()
-        curses.setsyx(y, x)
-        curses.doupdate()
+        if x < Shell.WIDTH and x >= 0:
+            window.move(y, x)
+        else:
+            if x > 0:
+                window.move(y+1, 0)
+            else:
+                window.move(y-1, Shell.WIDTH)
 
 
     @classmethod
