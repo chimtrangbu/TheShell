@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-from os import path, getenv
 import os
+from os import getenv, path
 
 
 def check_name(name):
@@ -25,10 +25,15 @@ def expand_tilde(arg):
     return arg
 
 
-def tilde_expansions(string):
-    args = string.split()
+def tilde_expansions(args):
     for i, arg in enumerate(args):
         if '~' in arg:
+            if arg.startswith('\\'):
+                # args[i] = arg[1:]
+                continue
+            elif arg[0] in ('\'', '\"'):
+                # args[i] = arg[1:-1]
+                continue
             if '=' in arg:
                 key, new_args = arg.split('=', 1)
                 if check_name(key):
@@ -36,52 +41,45 @@ def tilde_expansions(string):
                                                     x in new_args.split(':')])
             else:
                 args[i] = expand_tilde(arg)
-    return ' '.join(args)
+    return args
 
 
-def parameter_expansions(string):
+def parameter_expansions(args):
     exit_value = 0
-    string = path.expandvars(string)
-    if '$?' in string:
-        string = string.replace('$?', str(os.environ['?']))
-    while '$' in string:
-        if '${' in string:
-            name = string[string.find('${'):string.find('}')+1]
-            if check_name(name[3:-1]):
-                string = string[:string.find('${')] + \
-                         string[string.find('}')+1:]
-                continue
-            else:
-                exit_value = 1
-                string = 'bash: %s: bad substitution' % name
-                return exit_value, string
-        j = string.index('$') + 1
-        while j < len(string) and string[j] and \
-                (string[j].isalnum() or string[j] == '_'):
-            j += 1
-        string = string[:string.index('$')] + string[j:]
-    return exit_value, string
-
-
-def path_expansions(string):
-    exit_value = 0
-    if '~' in string:
-        string = tilde_expansions(string)
-    if '$' in string:
-        if ' $ ' in string:
-            ministrings = string.split(' $ ')
-            for i, ministring in enumerate(ministrings):
-                exit_value, s = parameter_expansions(ministring)
-                if exit_value:
-                    return exit_value, s
+    for i, arg in enumerate(args):
+        if not arg:
+            continue
+        if arg == '$' or '$' not in arg:
+            continue
+        if arg[0] in ('"', "'", '`', '(') and arg[-1] in ('"', "'", '`', ')'):
+            args[i] = arg[1:-1]
+            continue
+        # if arg.startswith('\"'):
+        #     arg = arg[1:-1]
+        if arg.startswith('\\'):
+            args[i] = arg[1:]
+            continue
+        arg = path.expandvars(arg)
+        if '$?' in arg:
+            arg = arg.replace('$?', os.environ['?'])
+        while '$' in arg:
+            if '${' in arg:
+                name = arg[arg.find('${')+2:arg.find('}')]
+                if check_name(name):
+                    arg[i] = arg[:arg.find('${')] + arg[arg.find('}')+1:]
+                    continue
                 else:
-                    ministrings[i] = s
-            string = ' $ '.join(ministrings)
-        else:
-            exit_value, string = parameter_expansions(string)
-    return exit_value, string
+                    return 1, 'intek-sh: ${' + name + '}: bad substitution'
+            if '$' in arg:
+                j = arg.index('$') + 1
+                while j < len(arg) and (arg[j].isalnum() or arg[j] == '_'):
+                    j += 1
+                arg = arg[:arg.index('$')] + arg[j:]
+        args[i] = arg
+    return exit_value, args
 
 
-# if __name__ == "__main__":
-#     print(path_expansions("echo +${dawdawd}"))
-    # print(path_expansions("echo +$ {PATH } _adwad${PATH}"))
+def path_expansions(args):
+    args = tilde_expansions(args)
+    exit_value, args = parameter_expansions(args)
+    return exit_value, args

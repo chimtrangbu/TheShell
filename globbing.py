@@ -3,6 +3,7 @@ from fnmatch import fnmatch
 from glob import glob
 from os import path, listdir
 
+
 def globbing(pathname):
     dir_name, base_name = path.split(pathname)
     if base_name.startswith("."):
@@ -24,12 +25,14 @@ def get_ll_dir(directory):
     return ['.', '..'] + listdir('.')
 
 
-def glob_string(string):
-    tokens = string.split()
-    for i, token in enumerate(tokens):
-        if '*' in token or '?' in token:
-            tokens[i] = ' '.join(globbing(token))
-    return ' '.join(tokens)
-
-# print(globbing('../.*/'))
-# print(glob_string('echo *'))
+def multi_glob(tokens):
+    result = []
+    for token in tokens:
+        if ('*' in token or '?' in token) and not token.startswith("\\")\
+            and '$' not in token:
+            gl = globbing(token)
+            if gl:
+                result.extend(gl)
+        else:
+            result.append(token)
+    return result
